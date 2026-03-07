@@ -1,0 +1,12 @@
+[package]
+name = "ribosome-poc"
+version = "0.1.0"
+edition = "2021"
+
+# Zero external deps — pure stdlib + kernel syscalls via inline unsafe
+# This compiles 100% offline with no crates.io access required.
+[dependencies]
+
+[profile.release]
+opt-level = "s"
+panic = "abort"

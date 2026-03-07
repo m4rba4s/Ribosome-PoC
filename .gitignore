@@ -1,0 +1,18 @@
+ # Ignore build artifacts
+target/
+**/*.rs.bk
+Cargo.lock
+
+# Ignore mathematical and theoretical docs from the lab environment
+doc1_conceptual_architecture.md
+doc2_technical_specification.md
+doc3_rust_poc_architecture.md
+doc4_detection_engineering.md
+doc5_academic_synthesis.md
+doc6_mathematical_analysis.md
+doc7_network_steganography.md
+Master_Whitepaper.md
+
+# Ignore playbooks
+Playbook_V1_Attack.md
+Playbook_V2_Defense.md
