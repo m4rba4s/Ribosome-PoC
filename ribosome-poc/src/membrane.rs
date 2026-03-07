@@ -45,7 +45,7 @@ impl Membrane {
         if n < 0 {
             return Err(MembraneError::WriteFailed(n));
         }
-        if n as usize != data.capacity() {
+        if n as usize != data.len() {
             // data is already zeroed; length mismatch is a hard error
             return Err(MembraneError::IncompleteWrite);
         }

@@ -16,3 +16,5 @@ Master_Whitepaper.md
 # Ignore playbooks
 Playbook_V1_Attack.md
 Playbook_V2_Defense.md
+dummy_memfd
+*.txt
