@@ -38,11 +38,11 @@ TRACEPOINT_PROBE(syscalls, sys_enter_memfd_create) {
 }
 
 // ----------------------------------------------------
-// Probe 2: sys_enter_execveat
+// Probe 2: sys_enter_execveat -> KPROBE for Enforcement
 // Catch file execution. If the calling PID recently created a memfd,
-// and is now calling execveat, it's a high-confidence signal for Ribosome-PoC
+// and is now calling execveat, we block it with -EPERM.
 // ----------------------------------------------------
-TRACEPOINT_PROBE(syscalls, sys_enter_execveat) {
+KPROBE(__x64_sys_execveat) {
     u32 pid = bpf_get_current_pid_tgid() >> 32;
     
     // Check if the caller PID exists in our tracking map
@@ -56,10 +56,13 @@ TRACEPOINT_PROBE(syscalls, sys_enter_execveat) {
         bpf_get_current_comm(&data.comm, sizeof(data.comm));
         bpf_probe_read_kernel_str(&data.trigger, sizeof(data.trigger), mname->name);
         
-        events.perf_submit(args, &data, sizeof(data));
+        events.perf_submit(ctx, &data, sizeof(data));
         
         // Remove the entry after alerting to prevent duplicate spam
         memfd_pids.delete(&pid);
+
+        // ENFORCEMENT: Block the syscall
+        bpf_override_return(ctx, -1); // -1 is -EPERM (Operation not permitted)
     }
     
     return 0;

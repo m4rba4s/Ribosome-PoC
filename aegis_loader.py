@@ -32,7 +32,7 @@ def print_event(cpu, data, size):
         print(f"      Rule:  In-Memory Execution (memfd_create -> execveat)")
         print(f"      PID:   {event.pid} ({comm})")
         print(f"      File:  {trigger}")
-        print(f"      Act:   Aegis logged the attempt. (Enforcement mode OFF)\n")
+        print(f"      Act:   Aegis BLOCKED the execution (Enforcement mode ON)\n")
 
 if __name__ == "__main__":
     if os.geteuid() != 0:
