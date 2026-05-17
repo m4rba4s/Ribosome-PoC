@@ -1,11 +1,16 @@
+#define static_assert(expr, ...)
 #include <uapi/linux/ptrace.h>
 #include <linux/sched.h>
 #include <linux/fs.h>
 #include <linux/fdtable.h>
 #include <linux/dcache.h>
 
+struct memfd_name_t {
+    char name[32];
+};
+
 // BPF Map to track memfd_create calls -> { pid : memfd_name }
-BPF_HASH(memfd_pids, u32, char[32]);
+BPF_HASH(memfd_pids, u32, struct memfd_name_t);
 
 // Ring buffer to alert user-space python script
 BPF_PERF_OUTPUT(events);
@@ -23,12 +28,12 @@ struct alert_data {
 // ----------------------------------------------------
 TRACEPOINT_PROBE(syscalls, sys_enter_memfd_create) {
     u32 pid = bpf_get_current_pid_tgid() >> 32;
-    char name[32] = {};
+    struct memfd_name_t mname = {};
     
     // Read the requested name for the memfd (e.g., "kworker/u4:2")
-    bpf_probe_read_user_str(&name, sizeof(name), args->uname);
+    bpf_probe_read_user_str(&mname.name, sizeof(mname.name), args->uname);
     
-    memfd_pids.update(&pid, &name);
+    memfd_pids.update(&pid, &mname);
     return 0;
 }
 
@@ -41,15 +46,15 @@ TRACEPOINT_PROBE(syscalls, sys_enter_execveat) {
     u32 pid = bpf_get_current_pid_tgid() >> 32;
     
     // Check if the caller PID exists in our tracking map
-    char *memfd_name = memfd_pids.lookup(&pid);
-    if (memfd_name) {
+    struct memfd_name_t *mname = memfd_pids.lookup(&pid);
+    if (mname) {
         // High confidence fileless execution via memfd
         struct alert_data data = {};
         data.pid = pid;
         data.alert_id = 1; // 1 = DETECT_IN_MEMORY_EXEC
         
         bpf_get_current_comm(&data.comm, sizeof(data.comm));
-        bpf_probe_read_kernel_str(&data.trigger, sizeof(data.trigger), memfd_name);
+        bpf_probe_read_kernel_str(&data.trigger, sizeof(data.trigger), mname->name);
         
         events.perf_submit(args, &data, sizeof(data));
         

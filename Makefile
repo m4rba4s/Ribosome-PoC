@@ -1,13 +1,17 @@
 # Makefile for Ribosome-PoC and Aegis Telemetry
 # This automates the build and test process for a full Linux host/VM.
 
-.PHONY: all build clean test_detection run_poc test_stegano help
+.PHONY: all build clean test pathway phenotype serum test_detection run_poc test_stegano help
 
 help:
 	@echo "Ribosome-PoC & Aegis Telemetry Build System"
 	@echo "==========================================="
-	@echo "make build          - Compile the Rust in-memory exec PoC"
-	@echo "make run_poc        - Run the PoC (translates payload to memfd)"
+	@echo "make build          - Compile the experimental cell and assay instrument"
+	@echo "make test           - Run Rust format, check, and tests"
+	@echo "make pathway        - Print the biomimetic I/O pathway"
+	@echo "make phenotype      - Audit packed.zone as a DNA library"
+	@echo "make serum          - Emit manifest serum variables for packed.zone"
+	@echo "make run_poc        - Run the harness audit cycle"
 	@echo "make test_detection - Run the YARA memory scanner against /proc"
 	@echo "make install_ebpf   - Load the Aegis eBPF telemetry module (requires sudo)"
 	@echo "make clean          - Remove Rust build artifacts"

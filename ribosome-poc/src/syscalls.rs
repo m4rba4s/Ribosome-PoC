@@ -6,6 +6,7 @@ pub const SYS_EXECVEAT: i64 = 322;
 pub const SYS_CLOSE: i64 = 3;
 pub const SYS_PTRACE: i64 = 101;
 pub const SYS_FCNTL: i64 = 72;
+pub const SYS_SCHED_SETAFFINITY: i64 = 203;
 
 pub const MFD_CLOEXEC: u32 = 1;
 pub const MFD_ALLOW_SEALING: u32 = 2;
@@ -73,11 +74,7 @@ pub unsafe fn raw_lseek(fd: i32, offset: i64, whence: i32) -> i64 {
 /// Executes the file referred to by `fd` using the AT_EMPTY_PATH flag.
 /// On success the process image is replaced — this function does not return.
 #[inline]
-pub unsafe fn raw_execveat(
-    fd: i32,
-    argv: *const *const u8,
-    envp: *const *const u8,
-) -> i64 {
+pub unsafe fn raw_execveat(fd: i32, argv: *const *const u8, envp: *const *const u8) -> i64 {
     let ret: i64;
     let empty: u8 = 0; // empty pathname ""
     core::arch::asm!(
@@ -142,6 +139,21 @@ pub unsafe fn raw_fcntl(fd: i32, cmd: u64, arg: u64) -> i64 {
         in("rdi") fd as u64,
         in("rsi") cmd,
         in("rdx") arg,
+        out("rcx") _, out("r11") _,
+        options(nostack)
+    );
+    ret
+}
+
+#[inline]
+pub unsafe fn raw_sched_setaffinity(pid: u32, cpusetsize: usize, mask: *const u8) -> i64 {
+    let ret: i64;
+    core::arch::asm!(
+        "syscall",
+        inlateout("rax") SYS_SCHED_SETAFFINITY => ret,
+        in("rdi") pid as u64,
+        in("rsi") cpusetsize as u64,
+        in("rdx") mask,
         out("rcx") _, out("r11") _,
         options(nostack)
     );

